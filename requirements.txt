@@ -1,0 +1,4 @@
+
+pyduinocoin==2.7  # Replace with the actual version you're using
+colorama==0.4.3  # Replace with the actual version you're using
+tabulate==0.8.7  # Replace with the actual version you're using

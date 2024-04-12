@@ -31,10 +31,8 @@ To use the script, follow these steps:
 3. Run the script using Python:
 
 ```
-python duino_coin_script.py
+python main.py
 ```
-
-Replace `duino_coin_script.py` with the actual name of the script.
 
 4. The script will prompt you to enter your Duino-Coin username.
 5. Watch the output in the terminal for your balance, miners, and transactions.

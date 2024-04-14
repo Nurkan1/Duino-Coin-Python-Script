@@ -1,13 +1,29 @@
+import requests
 import time
-import os
-import datetime
+from threading import Thread
 from pyduinocoin import DuinoClient
 from colorama import init, Fore, Style
 from tabulate import tabulate
-from threading import Thread
+from datetime import datetime
+
 
 # Initialize colorama
 init()
+last_duco_price = None
+
+DUCO_STATISTICS_ENDPOINT = "https://server.duinocoin.com/statistics"
+
+# Get the current DUCO price
+def get_duco_price():
+    try:
+        response = requests.get(DUCO_STATISTICS_ENDPOINT)
+        response.raise_for_status() 
+        statistics = response.json()
+        duco_price = statistics.get("Duco price", 0.00023600)  
+        return duco_price
+    except requests.RequestException as e:
+        print(Fore.RED + f"Failed to retrieve Duco price: {e}")
+        return None
 
 def get_user_data(username):
     try:
@@ -15,104 +31,165 @@ def get_user_data(username):
         balance = result.balance.balance
         miners_data = [[miner['identifier'], miner['hashrate'], miner['pool']] for miner in result.miners]
         transactions_data = [[transaction['datetime'], transaction['amount'], transaction['memo']] for transaction in result.transactions]
-        return balance, miners_data, transactions_data
+
+        # Convert transaction dates from string to datetime
+        transactions_dates = [datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S") for date_str, _, _ in transactions_data]
+        first_transaction_date = min(transactions_dates) if transactions_dates else None
+
+        return balance, miners_data, transactions_data, first_transaction_date
     except Exception as error:
         print(Fore.RED + "Error:", error)
-        return None, None, None
+        return None, None, None, None
 
-def read_initial_balance():
-    if os.path.exists("initial_balance.txt"):
-        with open("initial_balance.txt", "r") as file:
-            data = file.read().split(',')
-            initial_date = datetime.datetime.fromisoformat(data[0])
-            initial_balance = float(data[1].strip())
-            return initial_date, initial_balance
-    else:
-        return None, None
-
-def save_initial_balance(initial_date, initial_balance):
-    with open("initial_balance.txt", "w") as file:
-        file.write(f"{initial_date.isoformat()},{initial_balance}")
-
-def read_mining_start_time():
-    if os.path.exists("mining_start_time.txt"):
-        with open("mining_start_time.txt", "r") as file:
-            start_time = datetime.datetime.fromisoformat(file.read().strip())
-        return start_time
-    else:
-        return datetime.datetime.now()
-
-def save_mining_start_time(start_time):
-    with open("mining_start_time.txt", "w") as file:
-        file.write(start_time.isoformat())
-
-def update_data(username):
-    initial_date, initial_balance = read_initial_balance()
-    mining_start_time = read_mining_start_time()
-
-    # Check if it's the first run and save the start time
-    if not os.path.exists("mining_start_time.txt"):
-        save_mining_start_time(mining_start_time)
+# Mining function
+def mine(username):
+    last_transaction_count = 0
     while True:
+        try:
+            current_date = datetime.now()
+            balance, miners_data, transactions_data, first_transaction_date = get_user_data(username)
+
+            if balance is not None and first_transaction_date:
+                print(Fore.GREEN + "\nCurrent Balance: ")
+                print_table([["Balance", balance]])
+                print(Fore.CYAN + "\nMiners:")
+                print_table(miners_data, headers=["Identifier", "Hashrate", "Pool"])
+                print(Fore.LIGHTMAGENTA_EX + "\nTransactions:")
+                print_table(transactions_data, headers=["Datetime", "Amount", "Memo"])
+
+                if len(transactions_data) > last_transaction_count:
+                    print(Fore.YELLOW + "\nNew transaction detected!")
+                    print(ascii_logo())
+                    last_transaction_count = len(transactions_data)
+
+                calculate_show_earnings(username, first_transaction_date, current_date, balance)
+            else:
+                print(Fore.RED + "Failed to retrieve or parse first transaction date.")
+
+            print_coin_icon()
+            print(Style.RESET_ALL)
+            time.sleep(5)  # Wait for 5 seconds
+        except KeyboardInterrupt:
+            print(Fore.YELLOW + "\nMining stopped.")
+            break
+    print("\nMining process completed!")
+
+# Calculate and display earnings
+def calculate_show_earnings(username, first_transaction_date, current_date, current_balance):
+    try:
+        if isinstance(first_transaction_date, datetime):
+            # Calculate the elapsed time since the first transaction
+            time_elapsed = current_date - first_transaction_date
+
+            # Display the current balance
+            print(Fore.YELLOW + f"\nCurrent balance since {first_transaction_date.strftime('%Y-%m-%d %H:%M:%S')}: {current_balance:.8f} DUCO")
+            print_table([["Current Balance", f"{current_balance:.8f} DUCO"]])
+
+            # Calculate and display earnings
+            earnings_table = [
+                ["Rate per minute", f"{current_balance / (time_elapsed.total_seconds() / 60):.8f} DUCO/min"],
+                ["Rate per hour", f"{current_balance / (time_elapsed.total_seconds() / 3600):.8f} DUCO/hr"],
+                ["Rate per day", f"{current_balance / (time_elapsed.total_seconds() / 86400):.8f} DUCO/day"],
+                ["Rate per week", f"{current_balance / (time_elapsed.total_seconds() / 604800):.8f} DUCO/week"],
+                ["Rate per month", f"{current_balance / (time_elapsed.total_seconds() / 2592000):.8f} DUCO/month"],
+                ["Rate per year", f"{current_balance / (time_elapsed.total_seconds() / 31536000):.8f} DUCO/year"],
+                ["Time since first transaction", f"{time_elapsed.days} days {time_elapsed.seconds // 3600} hours {time_elapsed.seconds % 3600 // 60} minutes"]
+            ]
+            print_table(earnings_table)
+        else:
+            print(Fore.GREEN + "Start mining to calculate earnings.")
+    except Exception as e:
+        print(Fore.RED + f"Error calculating earnings: {e}")
+
+def print_table(data, headers=["Description", "Value"]):
+    try:
+        print(tabulate(data, headers=headers, tablefmt="grid"))
+    except Exception as e:
+        print(Fore.RED + f"Error displaying table: {e}")
+
+def ascii_logo():
+    return """
+██████╗ ██╗   ██╗ ██████╗ ██████╗     ██████╗ ███████╗██╗    ██╗ █████╗ ██████╗ ██████╗ ███████╗
+██╔══██╗██║   ██║██╔════╝██╔═══██╗    ██╔══██╗██╔════╝██║    ██║██╔══██╗██╔══██╗██╔══██╗██╔════╝
+██║  ██║██║   ██║██║     ██║   ██║    ██████╔╝█████╗  ██║ █╗ ██║███████║██████╔╝██║  ██║███████╗
+██║  ██║██║   ██║██║     ██║   ██║    ██╔══██╗██╔══╝  ██║███╗██║██╔══██║██╔══██╗██║  ██║╚════██║
+██████╔╝╚██████╔╝╚██████╗╚██████╔╝    ██║  ██║███████╗╚███╔███╔╝██║  ██║██║  ██║██████╔╝███████║
+"""
+
+def print_coin_icon():
+    try:
+        length_of_bar = 63 # Progress bar length
+        # Coin icons
+        coin_icons = [f"{Fore.YELLOW}🪙{Style.RESET_ALL}", f"{Fore.YELLOW}🪙{Style.RESET_ALL}"]
+
+        for i in range(length_of_bar):
+            # Coin icon
+            coin_icon = coin_icons[i % 2]  # Alternate between two coin icons
+            # Spaces before the coin icon
+            espacio_anterior = " " * i
+            # Empty spaces after the coin icon
+            espacio_posterior = " " * (length_of_bar - i - 1)
+
+            # Create the line with the coin icon
+            linea_movil = f"{espacio_anterior}{coin_icon}{espacio_posterior}"
+
+            # Print the line with the coin icon
+            print(f"\r{linea_movil}", end="")
+            time.sleep(0.2)  # Delay to create the animation
+
+        # Clear the line
+        print("\r", end="")
+    except Exception as e:
+        print(Fore.RED + "Error:", e)
+
+
+def main():
+    while True:
+        # Print the ASCII logo
         print(Fore.CYAN + """
-    ____        _                      ______      _     
-   / __ \__  __(_)___  ____  ____     / ____/___  (_)___ 
-  / / / / / / / / __ \/ __ \/ __ \   / /   / __ \/ / __ \\
- / /_/ / /_/ / / /_/ / / / / /_/ /  / /___/ /_/ / / / / /
-/_____/\__,_/_/\____/_/ /_/\____/   \____/\____/_/_/ /_/ 
-                                                         
-        """)
-        print(Fore.CYAN + "Index:\n")
-        
-        balance, miners_data, transactions_data = get_user_data(username)
-        if balance is not None:
-            print(Fore.GREEN + "Current Balance: ", balance)
-            print(Fore.CYAN + "\nMiners:")
-            print(tabulate(miners_data, headers=["Identifier", "Hashrate", "Pool"], tablefmt="plain"))
-            print(Fore.LIGHTMAGENTA_EX + "\nTransactions:")
-            print(tabulate(transactions_data, headers=["Datetime", "Amount", "Memo"], tablefmt="plain"))
-            
-            if initial_balance is None:
-                initial_date = datetime.datetime.now()
-                initial_balance = balance
-                save_initial_balance(initial_date, initial_balance)
-            
-            earnings, time_elapsed = calculate_show_earnings(initial_date, initial_balance, balance)
-            show_earnings_by_period(earnings, time_elapsed)
-            show_mining_duration(mining_start_time)
+        ____        _                      ______      _     
+       / __ \__  __(_)___  ____  ____     / ____/___  (_)___ 
+      / / / / / / / / __ \/ __ \/ __ \   / /   / __ \/ / __ \\
+     / /_/ / /_/ / / /_/ / / / / /_/ /  / /___/ /_/ / / / / /
+    /_____/\__,_/_/\____/_/ /_/\____/   \____/\____/_/_/ /_/ 
+                                                             
+    """)
 
-        time.sleep(60)
+        # Get the username
+        username = input(Fore.YELLOW + "Please enter your username: ")
+        if not username:
+            print(Fore.RED + "Username cannot be empty.")
+            continue
 
-def calculate_show_earnings(initial_date, initial_balance, current_balance):
-    earnings = current_balance - initial_balance
-    time_elapsed = datetime.datetime.now() - initial_date
-    print(Fore.YELLOW + f"\nTotal earnings since {initial_date.strftime('%Y-%m-%d %H:%M:%S')}: {earnings:.2f}")
-    return earnings, time_elapsed
+        try:
+            result = client.user(username)
+            dates = [transaction['datetime'] for transaction in result.transactions]
 
-def show_earnings_by_period(earnings, time_elapsed):
-    seconds = time_elapsed.total_seconds()
-    minutes = seconds / 60
-    hours = seconds / 3600
-    days = time_elapsed.days
-    weeks = days / 7
-    months = days / 30
-    years = days / 365
-    
-    print(Fore.YELLOW + f"Earnings per minute: {earnings / minutes if minutes else 0:.2f}")
-    print(Fore.YELLOW + f"Earnings per hour: {earnings / hours if hours else 0:.2f}")
-    print(Fore.YELLOW + f"Earnings per day: {earnings / days if days else 0:.2f}")
-    print(Fore.YELLOW + f"Earnings per week: {earnings / weeks if weeks else 0:.2f}")
-    print(Fore.YELLOW + f"Earnings per month: {earnings / months if months else 0:.2f}")
-    print(Fore.YELLOW + f"Earnings per year: {earnings / years if years else 0:.2f}")
+            # Get the farthest date
+            farthest_date = max(dates)
 
-def show_mining_duration(mining_start_time):
-    mining_duration = datetime.datetime.now() - mining_start_time
-    print(Fore.YELLOW + f"Mining Duration: {mining_duration.days} days, {mining_duration.seconds // 3600} hours")
+            # Get the current date
+            current_date = datetime.now()
 
-client = DuinoClient()
-username = input("Please enter your username: ")
-update_thread = Thread(target=update_data, args=(username,))
-update_thread.daemon = True
-update_thread.start()
-update_thread.join()
-print(Style.RESET_ALL)
+            # Get the user data
+            calculate_show_earnings(username, farthest_date, current_date, result.balance.balance)  # Use the farthest date as the start date          
+            # Check if the user exists
+        except Exception as e:
+            print(Fore.RED + "Error:", e)
+            print(Fore.RED + "Failed to check user existence.")
+            continue
+
+        # Create a thread for mining
+        mine_thread = Thread(target=mine, args=(username,))
+        mine_thread.daemon = True
+        mine_thread.start()
+
+        # Wait for the mining thread to finish
+        mine_thread.join()
+
+        print(Style.RESET_ALL)
+        break
+
+if __name__ == "__main__":
+    client = DuinoClient()  # Create a DuinoClient instance
+    main()

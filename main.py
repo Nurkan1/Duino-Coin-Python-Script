@@ -68,7 +68,7 @@ def mine(username):
 
             print_coin_icon()
             print(Style.RESET_ALL)
-            time.sleep(5)  # Wait for 5 seconds
+            time.sleep(60)  # Wait for 60 seconds
         except KeyboardInterrupt:
             print(Fore.YELLOW + "\nMining stopped.")
             break
@@ -118,26 +118,25 @@ def ascii_logo():
 
 def print_coin_icon():
     try:
-        length_of_bar = 63 # Progress bar length
-        # Coin icons
-        coin_icons = [f"{Fore.YELLOW}🪙{Style.RESET_ALL}", f"{Fore.YELLOW}🪙{Style.RESET_ALL}"]
+        length_of_bar = 63 # Longitud de la barra de progreso
+        coin_icon = f"{Fore.YELLOW}🪙{Style.RESET_ALL}"  # Icono de la moneda
 
-        for i in range(length_of_bar):
-            # Coin icon
-            coin_icon = coin_icons[i % 2]  # Alternate between two coin icons
-            # Spaces before the coin icon
-            espacio_anterior = " " * i
-            # Empty spaces after the coin icon
-            espacio_posterior = " " * (length_of_bar - i - 1)
+        for i in range(2 * length_of_bar):  # Repetir dos veces la longitud de la barra
+            if i < length_of_bar:  # Movimiento de izquierda a derecha
+                espacio_anterior = " " * i
+                espacio_posterior = " " * (length_of_bar - i - 1)
+            else:  # Movimiento de derecha a izquierda
+                espacio_anterior = " " * (2 * length_of_bar - i - 1)
+                espacio_posterior = " " * (i - length_of_bar)
 
-            # Create the line with the coin icon
+            # Crear la línea con el icono de la moneda
             linea_movil = f"{espacio_anterior}{coin_icon}{espacio_posterior}"
 
-            # Print the line with the coin icon
+            # Imprimir la línea con el icono de la moneda
             print(f"\r{linea_movil}", end="")
-            time.sleep(0.2)  # Delay to create the animation
+            time.sleep(1)  # Retraso para crear la animación de 1 segundo
 
-        # Clear the line
+        # Borrar la línea
         print("\r", end="")
     except Exception as e:
         print(Fore.RED + "Error:", e)
